@@ -10,13 +10,16 @@ def cmd_extract(args: argparse.Namespace) -> None:
     this method will scan emails dir for .eml files -> create a dict with each filename stem as a key and empty list as value
     the empty list is a placeholder for extracted line items that will come late
     """
+
+    from rfq.parser import parse_emails_dir
+    from rfq.extractor import extract_all
+
     emails_dir = Path(args.emails)
     if not emails_dir.is_dir():
         sys.exit(f"error: {emails_dir} is not a directory")
 
-    result = {}
-    for eml in sorted(emails_dir.glob("*.eml")):
-        result[eml.stem] = []
+    emails = parse_emails_dir(emails_dir)
+    result = extract_all(emails)
 
     Path(args.out).write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"wrote {len(result)} emails -> {args.out}")
