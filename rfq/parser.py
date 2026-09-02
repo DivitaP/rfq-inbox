@@ -11,12 +11,14 @@ from pathlib import Path
 
 @dataclass
 class ParsedEmail:
-    stem: str 
+    stem: str
     sender: str
     date: str
+    message_id: str
     in_reply_to: str
     subject: str
     body: str
+    customer_email: str = ""
     csv_rows: list[list[str]] = field(default_factory=list)
     has_pending_attachment: bool = False
 
@@ -53,8 +55,12 @@ def parse_eml(path: Path) -> ParsedEmail:
 
     sender = msg.get("from", "")
     date = msg.get("date", "")
-    in_reply_to = msg.get("in-reply-to", "")
+    message_id = msg.get("message-id", "").strip()
+    in_reply_to = msg.get("in-reply-to", "").strip()
     subject = msg.get("subject", "")
+
+    _addr = re.search(r'[\w.+-]+@[\w.-]+', sender)
+    customer_email = _addr.group(0).lower() if _addr else ""
 
     body = ""
     html_body = ""
@@ -98,13 +104,15 @@ def parse_eml(path: Path) -> ParsedEmail:
     has_pending_attachment = mentions_attachment and not csv_rows
 
     return ParsedEmail(
-        stem = path.stem,
-        sender = sender,
-        date = date,
+        stem=path.stem,
+        sender=sender,
+        date=date,
+        message_id=message_id,
         in_reply_to=in_reply_to,
         subject=subject,
         body=body,
         csv_rows=csv_rows,
+        customer_email=customer_email,
         has_pending_attachment=has_pending_attachment,
     )
 
