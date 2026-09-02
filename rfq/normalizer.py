@@ -136,22 +136,37 @@ def extract_qty(raw: str) -> tuple[float | None, str | None]:
     if _VAGUE.search(raw):
         return None, None
 
-    for pattern, uom in _QTY_PATTERNS:
-        m = pattern.search(raw)
-        if m:
-            return float(m.group(1)), uom
-
     # numbered list "N) count – spec": "1) 100 – hhcs..."
     m = re.match(r'^\d+\)\s*(\d+)\s*[-–]', raw)
     if m:
         return float(m.group(1)), "EA"
 
-    # leading number: "200,HHCS..." or "100 – hhcs..."
-    m = re.match(r'^(\d+)\s*[-–,×x]', raw)
+    # leading integer with explicit separator takes priority over UOM patterns:
+    # "200 – hhcs...", "100,HHCS...", "50 of the...", "4    --  1in PVC conduit 10ft"
+    # This prevents "10ft" in trailing length specs from stealing the qty.
+    m = re.match(r'^(\d+)\s*(?:[-–,×x]|\s+of\b)', raw)
     if m:
         return float(m.group(1)), "EA"
 
-    # trailing number: "3/4 ss ball valve   25"
+    # UOM-based patterns (meters, ft, dozens, boxes, etc.)
+    for pattern, uom in _QTY_PATTERNS:
+        m = pattern.search(raw)
+        if m:
+            return float(m.group(1)), uom
+
+    # embedded "N of": "add 10 of the...", "and 20 of the..."
+    m = re.search(r'\b(\d+)\s+of\b', raw)
+    if m:
+        return float(m.group(1)), "EA"
+
+    # bare leading integer followed by a letter (not a fraction like "3/4"):
+    # "100 hex cap screws" → 100; won't match "3/4 ball valve" (starts with fraction)
+    # Only runs when no UOM or leading-separator pattern matched.
+    m = re.match(r'^(\d+)\s+(?=[A-Za-z])', raw)
+    if m:
+        return float(m.group(1)), "EA"
+
+    # trailing number: "3/4 x 1/2 brass bushings, 10" or "EL 90 3/4 BRASS 15"
     m = re.search(r'[\s,]\s*(\d+)\s*$', raw)
     if m:
         return float(m.group(1)), "EA"

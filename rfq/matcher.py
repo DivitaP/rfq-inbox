@@ -251,7 +251,12 @@ class Matcher:
         with open(path, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 src = row["source"]
-                domain = src.split(":", 1)[1] if ":" in src else None
+                # Only customer-scoped xrefs are domain-restricted.
+                # Competitor and legacy numbers are usable by any customer.
+                if src.startswith("customer:"):
+                    domain = src.split(":", 1)[1]
+                else:
+                    domain = None
                 index[row["alt_number"]] = {"sku": row["sku"], "domain": domain}
         return index
 
@@ -355,7 +360,8 @@ class Matcher:
 
     _OR_SIZE = re.compile(r'\b(\d+/\d+|\d+-\d+/\d+)\s+or\s+(\d+/\d+|\d+-\d+/\d+|\d+)\b', re.I)
 
-    def match_line(self, raw: str, domain: str | None = None) -> dict:
+    def match_line(self, raw: str, domain: str | None = None,
+                   email_ctx: dict | None = None) -> dict:
         # "1/2 or 3/4 threaded, whichever..." — customer stated alternative sizes
         if self._OR_SIZE.search(raw):
             parsed = parse_line(raw)
@@ -483,20 +489,41 @@ class Matcher:
 
         if len(disc) == 1 and not active:
             return {
-                "raw": raw, 
-                "qty": parsed.qty, 
+                "raw": raw,
+                "qty": parsed.qty,
                 "uom": disc[0]["uom"],
-                "sku": None, 
+                "sku": None,
                 "abstain": "discontinued",
                 "candidates": [disc[0]["replaced_by"]] if disc[0]["replaced_by"] else [],
                 "why": f"only match is discontinued {disc[0]['sku']}"
             }
 
+        # Inherit category/material from previous items in the same email when the
+        # current raw has only a size (e.g. "20 of the 3/4″" after "1/2 black iron 90s").
+        if email_ctx and not parsed.category:
+            inherited = False
+            if email_ctx.get("category"):
+                parsed.category = email_ctx["category"]
+                inherited = True
+            if email_ctx.get("material") and not parsed.material:
+                parsed.material = email_ctx["material"]
+                inherited = True
+            if inherited:
+                candidates = self._catalog_candidates(parsed, raw)
+                active = [r for r in candidates if r["status"] == "active"]
+                if len(active) == 1:
+                    qty, uom = self._resolve_qty(parsed, active[0])
+                    return {
+                        "raw": raw, "qty": qty, "uom": uom,
+                        "sku": active[0]["sku"], "abstain": None, "candidates": [],
+                        "why": f"email-context match ({parsed.category}/{parsed.material})"
+                    }
+
         return {
-            "raw": raw, 
-            "qty": parsed.qty, 
+            "raw": raw,
+            "qty": parsed.qty,
             "uom": None,
-            "sku": None, 
+            "sku": None,
             "abstain": "not_in_catalog",
             "candidates": [],
             "why": f"no match for {parsed.category or 'unknown category'}"
