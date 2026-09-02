@@ -1,0 +1,17 @@
+From: Dan Kowalski <dan@acme-fab.com>
+To: rfq@ridgeline-supply.example
+Subject: hardware + fittings
+Date: Tue, 02 Sep 2026 09:14:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+hey, need the following:
+
+AF-04202 x 200                      <- known acme-fab xref, domain-scoped
+50 pcs 0.750 brass ball valve threaded  <- decimal size → 3/4 → BV-3/4-BR-FNPT
+30 – GI nipples 3/4                 <- GI = galvanized iron, NOT in our patterns
+20 – HDG hex cap screws 3/8-16 x 1  <- HDG = hot-dip galvanized, NOT in our patterns
+TSM24720 x 10                       <- tristate-mechanical xref, WRONG domain
+
+thanks
+Dan

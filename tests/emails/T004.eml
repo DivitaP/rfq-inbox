@@ -1,0 +1,16 @@
+From: Marcus Webb <mwebb@pipe-supply.com>
+To: rfq@ridgeline-supply.example
+Subject: fittings quote
+Date: Wed, 03 Sep 2026 08:20:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Need pricing on:
+
+20 – 1/2 or 3/4 galv elbows 90           <- or-size → ambiguous immediately
+6 – 3/4 90 elbows                         <- no material → ambiguous (BR/BI/SS/GV)
+10 – 1 inch ball valves                   <- no material, no end type → many candidates
+EL90-1/2-GALV x 25                        <- own discontinued SKU → discontinued + replaced_by
+RL-89466 x 10                             <- legacy xref → EL90-1/2-GALV → discontinued!
+3/4 PVC ball valve x 4                    <- PVC ball valve not in catalog → not_in_catalog
+HHCS-1/2-13x2-CD x 100                    <- another discontinued own SKU

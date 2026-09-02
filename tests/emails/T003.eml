@@ -1,0 +1,19 @@
+From: Ray Gutierrez <ray@construction-depot.com>
+To: rfq@ridgeline-supply.example
+Subject: wire, nuts, hose, gloves
+Date: Tue, 02 Sep 2026 14:05:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Please quote the following:
+
+1000 ft 12 AWG THHN black             <- 1000 ft = 2 × 500ft reels → qty=2 RL
+400 ea 3/8-16 hex nuts zinc           <- 400 EA → pack=100 → qty=4 BX
+a couple 3/4 brass ball valves        <- vague qty → qty=null
+2 dozen nitrile gloves medium         <- dozen not in qty patterns → gap
+30 meters of 1/2 push-lok hose        <- metric conversion → 98.4 FT
+BW-0081366 x 50                       <- Boltwright competitor xref (open to all)
+IP 26842-0649 x 20                    <- IronPeak competitor xref (bigram token)
+RL-62569 x 15                         <- legacy part number → EL90-1/2-BI
+
+Ray

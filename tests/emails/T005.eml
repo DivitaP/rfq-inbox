@@ -1,0 +1,25 @@
+From: Sarah Chen <schen@ridgeline-supply.example>
+To: rfq@ridgeline-supply.example
+Subject: FWD: hardware order from acme
+Date: Wed, 03 Sep 2026 10:00:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+can you work this one up? acme account.
+
+Sarah
+
+-------- Forwarded Message --------
+From: Dan Kowalski <dan@acme-fab.com>
+Date: Wed, 03 Sep 2026 09:45:00 -0500
+Subject: hardware order
+
+hi sarah,
+
+need:
+AF-04202 x 100             <- acme-fab xref, should resolve because domain extracted from fwd header
+AF-22389 x 3 BX            <- acme-fab xref
+50 – 1/2 SS hex cap 1/2-13 x 2   <- same SKU as AF-04202 but described, not by number
+TSM24720 x 5               <- tristate xref — should NOT resolve (wrong domain)
+
+thanks
