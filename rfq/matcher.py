@@ -177,7 +177,7 @@ def _filter_glove(rows, raw, uom):
     if a["size"]:
         rows = [r for r in rows if r["sku"].endswith(f"-{a['size']}")
                 or f"-{a['size']}-" in r["sku"]]
-    rows = _uom_filter(rows, uom if uom in ("PR", "DZ") else None)
+    rows = _uom_filter(rows, uom)
     return rows
 
 def _filter_sg(rows, raw, uom):
@@ -208,7 +208,7 @@ def _filter_hard_hat(rows, raw, uom):
     return rows
 
 def _filter_shop_towel(rows, raw, uom):
-    return _uom_filter(rows, uom if uom in ("RL", "CS") else None)
+    return _uom_filter(rows, uom)
 
 def _filter_elec_box(rows, raw, uom):
     if _4SQ.search(raw):
@@ -536,15 +536,24 @@ class Matcher:
             supersedes: dict[str, str | None] | None = None,
             customer_emails: dict[str, str | None] | None = None,
     ) -> dict:
+        from rfq.normalizer import parse_line as _pl
         sup = supersedes or {}
-        # inverse map: old_stem -> new_stem that supersedes it
         superseded_by: dict[str, str] = {old: new for new, old in sup.items() if old}
 
         result = {}
         for stem, raw_lines in lines.items():
             domain = (domains or {}).get(stem)
             cust = (customer_emails or {}).get(stem)
-            items = [self.match_line(r, domain) for r in raw_lines]
+            items, email_ctx = [], {}
+            for r in raw_lines:
+                item = self.match_line(r, domain, email_ctx=email_ctx)
+                items.append(item)
+                if item["sku"]:
+                    p = _pl(r)
+                    if p.category:
+                        email_ctx["category"] = p.category
+                    if p.material:
+                        email_ctx["material"] = p.material
             result[stem] = {
                 "supersedes": sup.get(stem),
                 "superseded_by": superseded_by.get(stem),
