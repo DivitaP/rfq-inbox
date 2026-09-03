@@ -1,0 +1,9 @@
+{
+  "agentHarness.command": "/opt/anaconda3/bin/agent-harness",
+  "agentHarness.extraEnv": {
+    "AGENT_HARNESS_JUDGE_PROVIDER": "groq",
+    "AGENT_HARNESS_JUDGE_MODEL": "openai/gpt-oss-120b",
+    "GROQ_API_KEY": "",
+    // "RFQ_FAILURE_MODE": "always_live"
+  }
+}

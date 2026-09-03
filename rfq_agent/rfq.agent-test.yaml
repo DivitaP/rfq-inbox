@@ -1,0 +1,156 @@
+target: "rfq_agent.graph:app"
+tests:
+
+  # ── cache-hit tests: fixture present, neither parser nor LLM called ─────────
+
+  - name: "E001 - simple zinc hardware and duct tape"
+    input: |
+      need pricing on these for the trailer job. ship to the shop like last time
+
+      50 pcs 3/8-16 x 1 hex cap screws zinc
+      6 - 3/4 brass gate valves
+      4 rolls 2 inch duct tape
+
+      tom
+    process:
+      expected_tools: [extract_rfq_cached, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_structured, extract_rfq_live]
+    evidence:
+      required: true
+      required_tools: [extract_rfq_cached]
+    output:
+      rubric: >
+        Must return three matched items with non-null SKUs and non-null quantities.
+        The hex cap screws must be zinc-plated, qty 50.
+        The gate valves must be brass, 3/4 inch, qty 6.
+        The duct tape must be 2 inch, qty 4.
+        No abstentions expected.
+      threshold: 0.7
+
+  - name: "E002 - competitor IronPeak xref resolves, ambiguous valve abstains"
+    input: |
+      {"body": "Cobalt Process Skids requests a quotation for the piping hardware listed below.\n\n  20 x 1/2 90 elbows\n  12 - IP 58899-0336 (.5 in brass ball valve) - this is the IronPeak number from our previous supplier\n  40 - 0.500-13 x 2 hex cap screws, stainless\n  8 - brass ball valves, 1/2 or 3/4 threaded, whichever is in stock", "domain": "cobaltskids.com"}
+    process:
+      expected_tools: [extract_rfq_cached, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_structured, extract_rfq_live]
+    evidence:
+      required: true
+      required_tools: [extract_rfq_cached]
+    output:
+      rubric: >
+        Must return a matched SKU for the IronPeak part number IP 58899-0336
+        (a 1/2 inch brass ball valve, FNPT ends), qty 12. Must NOT abstain or
+        return not_in_catalog for that item — the competitor xref must resolve.
+        The item requesting either 1/2 or 3/4 brass ball valve must abstain
+        because the size is ambiguous and guessing would be a wrong quote.
+        The stainless hex cap screws must match with qty 40.
+      threshold: 0.7
+
+  - name: "E006 - vague quantity produces null qty on ball valve"
+    input: |
+      hi, need 30 meters of 3/8 push-lok hose (the blue stuff), also a couple of
+      the 1-inch brass ball valves for the ends of the runs, also can you add
+      12 pairs of large nitrile gloves.
+    process:
+      expected_tools: [extract_rfq_cached, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_structured, extract_rfq_live]
+    evidence:
+      required: true
+      required_tools: [extract_rfq_cached]
+    output:
+      rubric: >
+        Must return the push-lok hose item with a non-null quantity (30 meters or equivalent).
+        The 1-inch brass ball valve item must have qty null because "a couple of"
+        is a vague quantity — do not assign a number to it.
+        Must return the nitrile gloves with qty 12 and unit PR (pairs).
+      threshold: 0.7
+
+  - name: "non-RFQ thank-you note served from cache"
+    input: |
+      Hi, just wanted to say thank you for the quick delivery on our last order.
+      The team really appreciated it. Will be in touch next week with some new needs.
+
+      Best,
+      Sarah
+    process:
+      expected_tools: [extract_rfq_cached, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_structured, extract_rfq_live]
+    output:
+      rubric: >
+        Must return an empty JSON array [] or a result with zero line items.
+        This message contains no quotable items — it is a thank-you note.
+        Returning any SKU or abstention would be incorrect.
+      threshold: 0.7
+
+  # ── structured-extraction tests: no fixture, parser succeeds, LLM skipped ──
+
+  - name: "pipe table - structured parser extracts rows, LLM not called"
+    input: |
+      Please quote the following items for our monthly maintenance stock.
+
+      Part No | Description | Qty
+      CPL-3/4-GV | 3/4 galv coupling | 10
+      HN-3/8-16-ZP | 3/8-16 hex nut zinc | 100
+      EL90-1/2-BI | 1/2 black iron 90 elbow | 25
+    process:
+      expected_tools: [extract_rfq_cached, extract_rfq_structured, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_live]
+    evidence:
+      required: true
+      required_tools: [extract_rfq_structured]
+    output:
+      rubric: >
+        Must return three matched items parsed from the pipe-separated table —
+        a galvanized coupling, zinc hex nuts, and black iron 90 elbows.
+        All three must have non-null SKUs and non-null quantities.
+        The hex nuts may report qty 1 BX (one box of 100) rather than qty 100 EA
+        if the catalog sells them per box — either is a correct representation.
+        The LLM must NOT have been called; results come from the structured parser.
+      threshold: 0.7
+
+  - name: "space-aligned table - structured parser extracts rows, LLM not called"
+    input: |
+      Hi, please quote the following for Job 4421 (rooftop units).
+
+      QTY  PART#              DESCRIPTION
+      15   BV-1/2-BR-FNPT     1/2 brass ball valve FNPT
+      30   EL90-3/4-BI        3/4 black iron 90 elbow
+
+      Ship to site as usual. Thanks.
+    process:
+      expected_tools: [extract_rfq_cached, extract_rfq_structured, match_catalog]
+      strict_order: true
+      forbidden_tools: [extract_rfq_live]
+    evidence:
+      required: true
+      required_tools: [extract_rfq_structured]
+    output:
+      rubric: >
+        Must return two matched items parsed from the space-aligned table —
+        a 1/2 brass ball valve qty 15 and a 3/4 black iron 90 elbow qty 30.
+        The LLM must NOT have been called; results come from the structured parser.
+        Both items should resolve to non-null SKUs using the part numbers given.
+      threshold: 0.7
+
+  # ── cache-miss + unstructured prose: full fallback chain fires ──────────────
+
+  - name: "cache miss - unstructured prose triggers full fallback chain"
+    input: |
+      Please update our shipping address to 4422 Industrial Blvd, Unit 7, Milwaukee WI 53207.
+      No order items enclosed.
+    process:
+      expected_tools: [extract_rfq_cached, extract_rfq_structured, extract_rfq_live, match_catalog]
+      strict_order: true
+    output:
+      rubric: >
+        No fixture exists and the body is plain prose with no table format, so all
+        three extraction tools must fire in order: cache check misses, structured
+        parser finds no table, LLM is called as the final fallback.
+        The message contains no quotable items, so the result must be an empty
+        JSON array [].
+      threshold: 0.7
