@@ -135,6 +135,7 @@ _QTY_PATTERNS = [
 def extract_qty(raw: str) -> tuple[float | None, str | None]:
     if _VAGUE.search(raw):
         return None, None
+    raw = re.sub(r'\bnot\s+\d+\b', '', raw, flags=re.I)   # "80 not 50" → 80
 
     # numbered list "N) count – spec": "1) 100 – hhcs..."
     m = re.match(r'^\d+\)\s*(\d+)\s*[-–]', raw)

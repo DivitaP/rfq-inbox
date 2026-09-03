@@ -53,6 +53,8 @@ _SYSTEM = (
     "Preserve each line as close to verbatim as the customer wrote it — keep part numbers, "
     "customer/vendor reference codes (e.g. 'AF-04202', 'RL-77981', 'NF/27937/567'), "
     "pipe separators, and embedded quantity notation like 'qty N'. "
+    "Preserve vague quantity words exactly as written (e.g. 'a couple of', 'a few', 'some') "
+    "— do not replace them with a number or drop them. "
     "For pipe-separated tables (code | description | qty), include each data row verbatim. "
     "For space-aligned tables (columns separated by multiple spaces), include each data row verbatim. "
     "Strip trailing purpose phrases (e.g. 'for the hanger brackets'). "
@@ -80,8 +82,10 @@ def _context_hash(parent_context: list[dict]) -> str:
     s = json.dumps(parent_context, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(s.encode()).hexdigest()[:8]
 
-def _fixture_key(body: str, parent_context: list[dict] | None) -> str:
-    key = _body_hash(body)
+_PROMPT_VERSION = hashlib.sha256((_SYSTEM + _SYSTEM_DELTA).encode()).hexdigest()[:8]
+
+def _fixture_key(body: str, parent_context) -> str:
+    key = f"{_body_hash(body)}_{_PROMPT_VERSION}"
     if parent_context:
         key += f"_{_context_hash(parent_context)}"
     return key
