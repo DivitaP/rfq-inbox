@@ -2,24 +2,64 @@
 
 import argparse
 import json
+import re
 import sys
+import time
 from pathlib import Path
 
-def cmd_extract(args: argparse.Namespace) -> None:
-    """
-    this method will scan emails dir for .eml files -> create a dict with each filename stem as a key and empty list as value
-    the empty list is a placeholder for extracted line items that will come late
-    """
+def _extract_threaded(emails: dict) -> dict[str, list[str]]:
+    """Extract lines for every email, giving follow-ups their parent's lines as context.
 
+    Same thread handling cmd_run does, so `extract` and `run` produce identical
+    lines.json for a threaded inbox.
+    """
+    from rfq.extractor import extract_lines, _is_duplicate
+
+    msgid_to_stem = {p.message_id: stem for stem, p in emails.items() if p.message_id}
+    supersedes: dict[str, str] = {}
+    for stem, parsed in emails.items():
+        if parsed.in_reply_to and parsed.in_reply_to in msgid_to_stem:
+            supersedes[stem] = msgid_to_stem[parsed.in_reply_to]
+
+    # parents before children; date strings aren't reliably sortable as text
+    order, remaining = [], set(emails)
+    while remaining:
+        ready = sorted(s for s in remaining if supersedes.get(s) not in remaining)
+        if not ready:
+            order.extend(sorted(remaining))   # cycle guard
+            break
+        order.extend(ready)
+        remaining -= set(ready)
+
+    result: dict[str, list[str]] = {}
+    for stem in order:
+        parsed = emails[stem]
+        if _is_duplicate(parsed):
+            result[stem] = []
+            continue
+        parent = supersedes.get(stem)
+        parent_context = None
+        if parent and result.get(parent):
+            parent_context = [{"raw": r} for r in result[parent]]
+        result[stem] = extract_lines(parsed, parent_context=parent_context)
+
+    return {stem: result[stem] for stem in emails}   # restore input key order
+
+def cmd_extract(args: argparse.Namespace) -> None:
+    """Scan a directory of .eml files and write the extracted line items per email.
+
+    Follow-up emails are extracted after the email they reply to, with the parent's
+    lines passed as context, so a reply like "rest stays the same" resolves to the
+    complete order rather than the fragment the customer typed.
+    """
     from rfq.parser import parse_emails_dir
-    from rfq.extractor import extract_all
 
     emails_dir = Path(args.emails)
     if not emails_dir.is_dir():
         sys.exit(f"error: {emails_dir} is not a directory")
 
     emails = parse_emails_dir(emails_dir)
-    result = extract_all(emails)
+    result = _extract_threaded(emails)
 
     Path(args.out).write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"wrote {len(result)} emails -> {args.out}")
@@ -52,6 +92,63 @@ def _classify(parsed) -> str:
         return "duplicate"
     return "rfq"
 
+def _parse_subject_hints(subject: str) -> list[dict]:
+    """Extract product hints from the subject line.
+
+    Splits on '+', ',', '&' to get per-product phrases, then runs the same
+    normalizer functions used on body lines. Only 1-3 digit integers are
+    treated as qty candidates — longer numbers are likely PO/job references.
+    """
+    from rfq.normalizer import extract_category, extract_material, extract_size
+    hints = []
+    for chunk in re.split(r'[+,&]', subject):
+        chunk = chunk.strip()
+        cat = extract_category(chunk)
+        if not cat:
+            continue
+        mat = extract_material(chunk)
+        size = extract_size(chunk)
+        qty = None
+        m = re.search(r'(?<![/\d])\b(\d{1,3})\b(?![/\d])', chunk)
+        if m:
+            qty = float(m.group(1))
+        hints.append({"category": cat, "qty": qty, "material": mat, "size": size})
+    return hints
+
+
+def _conflicted_line_indices(subject: str, raw_lines: list[str]) -> set[int]:
+    """Return the indices of raw_lines whose attributes conflict with subject hints.
+
+    A conflict is: subject specifies a value for qty / material / size AND the
+    body line specifies a *different* non-None value for that same attribute on
+    the same product category. Both sides must have a value for a conflict to
+    fire — a missing value on either side is not a conflict.
+    """
+    from rfq.normalizer import extract_category, extract_material, extract_size, extract_qty
+    hints = _parse_subject_hints(subject)
+    if not hints:
+        return set()
+    conflicted: set[int] = set()
+    for i, line in enumerate(raw_lines):
+        cat = extract_category(line)
+        if not cat:
+            continue
+        matching = [h for h in hints if h["category"] == cat]
+        if not matching:
+            continue
+        hint = matching[0]
+        line_qty, _ = extract_qty(line)
+        line_mat = extract_material(line)
+        line_size = extract_size(line)
+        if hint["qty"] is not None and line_qty is not None and hint["qty"] != line_qty:
+            conflicted.add(i)
+        elif hint["material"] is not None and line_mat is not None and hint["material"] != line_mat:
+            conflicted.add(i)
+        elif hint["size"] is not None and line_size is not None and hint["size"] != line_size:
+            conflicted.add(i)
+    return conflicted
+
+
 def _action(classification: str, items: list) -> str:
     if classification in ("not_rfq", "duplicate"):
         return "ignore"
@@ -70,9 +167,10 @@ def _action(classification: str, items: list) -> str:
 def cmd_run(args: argparse.Namespace) -> None:
     import re
     from rfq.parser import parse_emails_dir
-    from rfq.extractor import extract_all, extract_lines
+    from rfq.extractor import extract_all, extract_lines, _is_duplicate
     from rfq.matcher import load_matcher
 
+    _t0 = time.time()
     emails_dir = Path(args.emails)
     if not emails_dir.is_dir():
         sys.exit(f"error: {emails_dir} is not a directory")
@@ -111,12 +209,12 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     def _match_with_ctx(raw_lines, domain):
         """Match items in order, carrying category/material context forward."""
+        from rfq.normalizer import parse_line as _pl
         items, email_ctx = [], {}
         for r in raw_lines:
             item = matcher.match_line(r, domain, email_ctx=email_ctx)
             items.append(item)
             if item["sku"]:
-                from rfq.normalizer import parse_line as _pl
                 p = _pl(r)
                 if p.category:
                     email_ctx["category"] = p.category
@@ -129,6 +227,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         parsed = emails[stem]
         domain = domains.get(stem)
         items = _match_with_ctx(raw_lines, domain)
+        for i in _conflicted_line_indices(parsed.subject, raw_lines):
+            if i < len(items) and items[i].get("sku"):
+                items[i] = dict(items[i])
+                items[i]["qty"] = None
+                items[i]["uom"] = None
         cl = _classify(parsed)
         result[stem] = {
             "classification": cl,
@@ -159,10 +262,17 @@ def cmd_run(args: argparse.Namespace) -> None:
         parsed = emails[stem]
         domain = domains.get(stem)
         parent_stem = supersedes.get(stem)
-        parent_context = matched_cache.get(parent_stem) if parent_stem else None
+        parent_context = None
+        if parent_stem and matched_cache.get(parent_stem):
+            parent_context = [{"raw": p["raw"]} for p in matched_cache[parent_stem]]
 
         raw_lines = extract_lines(parsed, parent_context=parent_context)
         items = _match_with_ctx(raw_lines, domain)
+        for i in _conflicted_line_indices(parsed.subject, raw_lines):
+            if i < len(items) and items[i].get("sku"):
+                items[i] = dict(items[i])
+                items[i]["qty"] = None
+                items[i]["uom"] = None
         matched_cache[stem] = items
 
         cl = _classify(parsed)
@@ -190,7 +300,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             }
 
     Path(args.out).write_text(json.dumps(result, indent=2, ensure_ascii=False))
-    print(f"wrote {len(result)} emails -> {args.out}")
+    elapsed = time.time() - _t0
+    print(f"wrote {len(result)} emails -> {args.out}  ({elapsed:.2f}s)")
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="rfq")
