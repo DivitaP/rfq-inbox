@@ -336,7 +336,10 @@ class Matcher:
 
     def _resolve_qty(self, parsed, row: dict) -> tuple:
         cat_uom = row["uom"]
-        pack_qty = int(row["pack_qty"] or 1)
+        try:
+            pack_qty = int(row["pack_qty"] or 1)
+        except (ValueError, TypeError):
+            pack_qty = 1
         cust_qty = parsed.qty
         cust_uom = parsed.uom
 

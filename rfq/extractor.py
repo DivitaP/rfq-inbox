@@ -113,17 +113,20 @@ def _call_llm(body: str) -> list[str]:
     client, model = _make_client()
     if not client:
         return []
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": f"Email body:\n\n{body}"},
-        ],
-    )
-    data = json.loads(resp.choices[0].message.content)
-    return data.get("lines", [])
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": f"Email body:\n\n{body}"},
+            ],
+        )
+        data = json.loads(resp.choices[0].message.content)
+        return data.get("lines", [])
+    except Exception:
+        return []
 
 def _call_llm_delta(body: str, parent_context: list[dict]) -> list[str]:
     client, model = _make_client()
@@ -131,17 +134,20 @@ def _call_llm_delta(body: str, parent_context: list[dict]) -> list[str]:
         return []
     # Show only customer text — no SKU annotations so the LLM doesn't copy them verbatim
     prev = "\n".join(f"- {p['raw']}" for p in parent_context)
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": _SYSTEM_DELTA},
-            {"role": "user", "content": f"Previous order:\n{prev}\n\nFollow-up email:\n{body}"},
-        ],
-    )
-    data = json.loads(resp.choices[0].message.content)
-    return data.get("lines", [])
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": _SYSTEM_DELTA},
+                {"role": "user", "content": f"Previous order:\n{prev}\n\nFollow-up email:\n{body}"},
+            ],
+        )
+        data = json.loads(resp.choices[0].message.content)
+        return data.get("lines", [])
+    except Exception:
+        return []
 
 def _llm_extract(body: str, parent_context: list[dict] | None = None) -> list[str]:
     cached = _load_fixture(body, parent_context)
